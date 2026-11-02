@@ -1,0 +1,159 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --primary: #FFBE00;
+  --primary-hover: #E5AB00;
+  --primary-glow: rgba(255, 190, 0, 0.25);
+  --bg-dark: #0B0F19;
+  --card-bg: #151D30;
+  --card-border: #232F4D;
+  --accent-red: #EF4444;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg-dark);
+  color: #F8FAFC;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0B0F19;
+}
+::-webkit-scrollbar-thumb {
+  background: #232F4D;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FFBE00;
+}
+
+/* Glassmorphism */
+.glass {
+  background: rgba(21, 29, 48, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glow-yellow {
+  box-shadow: 0 0 25px var(--primary-glow);
+}
+
+/* Custom Checkbox SnapTube Style */
+.snap-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #64748B;
+  border-radius: 50%;
+  outline: none;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+  background-color: transparent;
+  flex-shrink: 0;
+}
+
+.snap-checkbox:checked {
+  background-color: #FFBE00;
+  border-color: #FFBE00;
+}
+
+.snap-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 6px;
+  height: 11px;
+  border: solid #0B0F19;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* SnapTube Radio Buttons */
+.snap-radio {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #64748B;
+  border-radius: 50%;
+  outline: none;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+  background-color: transparent;
+  flex-shrink: 0;
+}
+
+.snap-radio:checked {
+  border-color: #FFBE00;
+}
+
+.snap-radio:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  background-color: #FFBE00;
+  border-radius: 50%;
+}
+
+/* Bottom Sheet */
+.bottom-sheet {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+
+.bottom-sheet.open {
+  transform: translateY(0%);
+}
+
+.bottom-sheet.closed {
+  transform: translateY(100%);
+}
+
+/* Progress bar shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.progress-shimmer {
+  background: linear-gradient(90deg, #FFBE00 0%, #FFF275 50%, #FFBE00 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite linear;
+}
+
+/* Card hover animation */
+.video-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.video-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 190, 0, 0.15);
+  border-color: rgba(255, 190, 0, 0.3);
+}
+
+/* Ripple effect on touch */
+.touch-press:active {
+  transform: scale(0.96);
+  transition: transform 0.1s ease;
+}

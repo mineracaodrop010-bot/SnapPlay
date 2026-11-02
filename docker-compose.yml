@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  snapplay:
+    build: .
+    container_name: snapplay-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./downloads:/app/downloads
+    environment:
+      - PORT=8000

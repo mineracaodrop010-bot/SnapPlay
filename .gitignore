@@ -1,0 +1,16 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Downloads temporários
+downloads/*
+!downloads/.gitkeep
+
+# Ambientes virtuais
+env/
+venv/
+.env
+
+# Logs
+*.log
