@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -19,10 +22,7 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Setup Gradle 8.5
+    - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.5'
@@ -32,7 +32,7 @@ jobs:
         cd android
         gradle assembleDebug --no-daemon --stacktrace
 
-    - name: Rename APK
+    - name: Copy and Rename APK
       run: |
         cp android/app/build/outputs/apk/debug/app-debug.apk SnapPlay.apk
 
@@ -42,3 +42,18 @@ jobs:
         name: SnapPlay-Android-APK
         path: SnapPlay.apk
         retention-days: 30
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v1.0-apk
+        name: "SnapPlay APK Oficial v1.0"
+        body: |
+          ### SnapPlay - Aplicativo Android Oficial (.APK)
+          Instale diretamente no seu aparelho Android para ter a **abinha flutuante estilo SnapTube sobre o YouTube**!
+          
+          **Como usar:**
+          1. Baixe o arquivo `SnapPlay.apk` abaixo no seu celular.
+          2. Abra o arquivo e toque em **Instalar** (permita a instalação caso o Android pergunte).
+          3. No YouTube, toque em **Compartilhar > SnapPlay** e a abinha flutuante subirá na tela instantaneamente!
+        files: SnapPlay.apk
