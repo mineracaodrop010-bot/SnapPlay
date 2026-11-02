@@ -60,9 +60,24 @@ def get_lan_ip() -> str:
         s.close()
     return ip
 
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.endswith(".html") or path.endswith(".js") or path.endswith(".css") or path.endswith(".json") or path == "/":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "service": "SnapPlay", "version": "1.1.0"}
+    return {
+        "status": "ok",
+        "service": "SnapPlay",
+        "version": "1.2.0",
+        "deployed_at": "2026-11-02T17:53:00"
+    }
 
 @app.get("/api/network-info")
 async def get_network_info(request: Request):

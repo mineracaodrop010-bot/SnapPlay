@@ -34,6 +34,18 @@ const state = {
   }
 };
 
+const CURRENT_APP_VERSION = '2.1.0';
+
+// Auto-limpeza de cache antigo para forçar atualização no celular
+if (localStorage.getItem('snapplay_version') !== CURRENT_APP_VERSION) {
+  localStorage.setItem('snapplay_version', CURRENT_APP_VERSION);
+  if ('caches' in window) {
+    caches.keys().then(keys => {
+      keys.forEach(k => caches.delete(k));
+    });
+  }
+}
+
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
   initIcons();
