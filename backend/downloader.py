@@ -6,6 +6,9 @@ import math
 import asyncio
 import logging
 import threading
+import urllib.request
+import urllib.parse
+import json
 from typing import Dict, Any, Optional, List
 import yt_dlp
 
@@ -53,28 +56,63 @@ def get_base_ydl_opts() -> dict:
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'ignoreerrors': True,
+        'ignoreerrors': False,
         'logtostderr': False,
         'geo_bypass': True,
         'socket_timeout': 30,
-        'js_runtimes': {'node': {}},
+        'remote_components': ['ejs:github'],
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+                'player_skip': ['configs'],
+            }
+        },
     }
 
 def clean_youtube_url(url: str) -> str:
-    # Remove parâmetros de rastreamento mantendo apenas o ID do vídeo ou playlist
-    clean = url.strip()
-    return clean
+    if not url:
+        return ""
+    cleaned = url.strip()
+    m_url = re.search(r'https?://[^\s]+', cleaned)
+    if m_url:
+        cleaned = m_url.group(0)
+
+    m_list = re.search(r'[?&]list=([a-zA-Z0-9_-]+)', cleaned)
+    m_v = re.search(r'(?:v=|\/v\/|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})', cleaned)
+
+    if 'watch?v=' in cleaned and m_v:
+        return f"https://www.youtube.com/watch?v={m_v.group(1)}"
+    elif m_list and 'watch' not in cleaned:
+        return f"https://www.youtube.com/playlist?list={m_list.group(1)}"
+    elif m_v:
+        return f"https://www.youtube.com/watch?v={m_v.group(1)}"
+    return cleaned
+
+def fetch_oembed_info(url: str) -> Optional[dict]:
+    try:
+        clean = clean_youtube_url(url)
+        oembed_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(clean)}&format=json"
+        req = urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            if resp.status == 200:
+                return json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        logger.warning(f"oEmbed fallback falhou: {e}")
+    return None
 
 def is_playlist_url(url: str) -> bool:
     lower = url.lower()
     # Apenas considera playlist se for explicitamente uma lista de reprodução e não um vídeo único assistido numa lista
     if 'watch?v=' in lower and '&list=' in lower:
-        # Quando o usuário compartilha um vídeo que estava tocando em uma lista, ele quer o vídeo solo a menos que seja link puro de playlist
-        # Mas se a URL contiver 'list=' e NÃO contiver 'watch?v=', é playlist pura
         return False
     return ('playlist?list=' in lower or 
             '/playlist/' in lower or 
-            'sets/' in lower)
+            'sets/' in lower or
+            ('list=' in lower and 'watch' not in lower))
 
 def extract_playlist_sync(url: str) -> MediaInfoResponse:
     ydl_opts = get_base_ydl_opts()
@@ -246,6 +284,8 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
     )
 
 def extract_info_sync(url: str) -> MediaInfoResponse:
+    url = clean_youtube_url(url)
+    
     # Se a URL for identificada como Playlist pura
     if is_playlist_url(url):
         try:
@@ -253,19 +293,39 @@ def extract_info_sync(url: str) -> MediaInfoResponse:
         except Exception as e:
             logger.warning(f"Tentativa de playlist falhou ({e}), tentando como mídia única...")
 
+    raw_info = None
     ydl_opts = get_base_ydl_opts()
     ydl_opts['extract_flat'] = False
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        raw_info = ydl.extract_info(url, download=False)
-        if not raw_info:
-            raise ValueError("Não foi possível obter dados para esta URL.")
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            raw_info = ydl.extract_info(url, download=False)
+            if raw_info and 'entries' in raw_info and raw_info['entries']:
+                if len(raw_info['entries']) > 1 and ('playlist' in url or 'list=' in url and 'watch' not in url):
+                    return extract_playlist_sync(url)
+                raw_info = raw_info['entries'][0]
+    except Exception as ydl_err:
+        logger.warning(f"yt-dlp extract_info falhou ({ydl_err}), acionando fallback oEmbed...")
 
-        if 'entries' in raw_info and raw_info['entries']:
-            # Se tiver entries e a URL for playlist pura
-            if len(raw_info['entries']) > 1 and ('playlist' in url or 'list=' in url and 'watch' not in url):
-                return extract_playlist_sync(url)
-            raw_info = raw_info['entries'][0]
+    if not raw_info:
+        oe = fetch_oembed_info(url)
+        if oe:
+            m_v = re.search(r'(?:v=|\/v\/|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})', url)
+            v_id = m_v.group(1) if m_v else str(uuid.uuid4())[:8]
+            raw_info = {
+                'id': v_id,
+                'title': oe.get('title') or 'Vídeo do YouTube',
+                'description': f"Canal: {oe.get('author_name', 'YouTube')}",
+                'thumbnail': oe.get('thumbnail_url') or f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
+                'duration': 0,
+                'uploader': oe.get('author_name') or 'Canal YouTube',
+                'uploader_url': oe.get('author_url'),
+                'view_count': 0,
+                'webpage_url': f"https://www.youtube.com/watch?v={v_id}",
+                'extractor_key': 'YouTube'
+            }
+        else:
+            raise ValueError("Não foi possível carregar as informações do vídeo. Verifique se o link está correto.")
 
     video_id = raw_info.get('id', str(uuid.uuid4())[:8])
     title = raw_info.get('title', 'Sem Título')
@@ -403,6 +463,7 @@ def sanitize_filename(name: str) -> str:
 
 def download_worker(task_id: str, url: str, format_id: str, media_type: str, quality_label: str, raw_title: Optional[str], raw_thumb: Optional[str]):
     try:
+        url = clean_youtube_url(url)
         with tasks_lock:
             tasks[task_id]['status'] = 'downloading'
             tasks[task_id]['progress'] = 5.0
@@ -454,7 +515,7 @@ def download_worker(task_id: str, url: str, format_id: str, media_type: str, qua
             ext = 'm4a' if 'm4a' in format_id else 'mp3'
 
             ydl_opts.update({
-                'format': 'bestaudio/best',
+                'format': 'bestaudio/best/140/18',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': ext,
@@ -462,8 +523,18 @@ def download_worker(task_id: str, url: str, format_id: str, media_type: str, qua
                 }],
             })
         else:
-            # Vídeo com fallback seguro
-            target_format = format_id if '+' in format_id else f"{format_id}+bestaudio/best"
+            # Vídeo com fallback resiliente para garantir download de solo vídeo mesmo com restrições
+            if '1080' in format_id:
+                target_format = "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best/18"
+            elif '720' in format_id:
+                target_format = "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo+bestaudio/best/18"
+            elif '480' in format_id:
+                target_format = "bestvideo[height<=480]+bestaudio/best[height<=480]/bestvideo+bestaudio/best/18"
+            elif '360' in format_id:
+                target_format = "bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo+bestaudio/best/18"
+            else:
+                target_format = format_id if '+' in format_id else f"{format_id}+bestaudio/best/18"
+
             ydl_opts.update({
                 'format': target_format,
                 'merge_output_format': 'mp4',

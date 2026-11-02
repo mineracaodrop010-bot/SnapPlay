@@ -22,8 +22,8 @@ import java.net.URLEncoder;
 public class MainActivity extends Activity {
 
     private WebView webView;
-    // Substitua pelo seu link do Render ou IP
-    private static final String APP_URL = "https://snapplay-app.onrender.com";
+    // URL oficial do SnapPlay hospedado no Render
+    private static final String APP_URL = "https://snapplay.onrender.com";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override

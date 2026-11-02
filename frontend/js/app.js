@@ -58,7 +58,7 @@ function initIcons() {
 // Trata links compartilhados pelo YouTube/TikTok no celular
 function handleIncomingSharedUrl() {
   const params = new URLSearchParams(window.location.search);
-  const rawShared = params.get('url') || params.get('text');
+  const rawShared = params.get('url') || params.get('text') || params.get('title');
   
   if (rawShared) {
     state.isSharedMode = true;
@@ -74,7 +74,7 @@ function handleIncomingSharedUrl() {
       // Limpa URL da barra de endereços
       window.history.replaceState({}, document.title, window.location.pathname);
       
-      // No modo compartilhado no celular, ativa visual limpo focado na abinha
+      // No modo compartilhado no celular, ativa abinha flutuante estilo SnapTube sobre o YouTube
       prepareSharedOverlayMode();
       
       handleSearchOrAnalyze(targetUrl);
@@ -83,14 +83,21 @@ function handleIncomingSharedUrl() {
 }
 
 function prepareSharedOverlayMode() {
-  const header = document.getElementById('main-header');
-  const platforms = document.getElementById('platforms-hub');
-  const content = document.getElementById('main-content');
-  const mobileNav = document.getElementById('mobile-nav');
+  document.body.classList.add('shared-overlay-mode');
+}
 
-  if (window.innerWidth < 768) {
-    if (platforms) platforms.classList.add('hidden');
-    if (content) content.classList.add('opacity-40');
+function exitOverlayMode() {
+  state.isSharedMode = false;
+  document.body.classList.remove('shared-overlay-mode');
+  const backBtn = document.getElementById('back-to-youtube-btn');
+  const fullAppBtn = document.getElementById('open-full-app-btn');
+  if (backBtn) backBtn.classList.add('hidden');
+  if (fullAppBtn) fullAppBtn.classList.add('hidden');
+}
+
+function handleBackdropClick(event) {
+  if (event.target && event.target.id === 'download-modal') {
+    closeDownloadModal();
   }
 }
 
@@ -258,11 +265,15 @@ function openDownloadModal(mediaInfo) {
   // Seleção padrão: 1080p
   selectSoloFormat('bestvideo[height<=1080]+bestaudio/best[height<=1080]/best', 'video', 'Alta qualidade (1080p)');
 
-  // Se veio do compartilhamento, exibe botão para voltar ao YouTube
+  // Se veio do compartilhamento, exibe botão para voltar ao YouTube e link para app completo
   const backBtn = document.getElementById('back-to-youtube-btn');
-  if (backBtn) {
-    if (state.isSharedMode) backBtn.classList.remove('hidden');
-    else backBtn.classList.add('hidden');
+  const fullAppBtn = document.getElementById('open-full-app-btn');
+  if (state.isSharedMode) {
+    if (backBtn) backBtn.classList.remove('hidden');
+    if (fullAppBtn) fullAppBtn.classList.remove('hidden');
+  } else {
+    if (backBtn) backBtn.classList.add('hidden');
+    if (fullAppBtn) fullAppBtn.classList.add('hidden');
   }
 
   modal.classList.remove('hidden');
@@ -309,6 +320,9 @@ function closeDownloadModal() {
   sheet.classList.add('closed');
   setTimeout(() => {
     modal.classList.add('hidden');
+    if (state.isSharedMode) {
+      returnToYouTube();
+    }
   }, 250);
 }
 
@@ -340,12 +354,12 @@ async function triggerSoloDownload() {
       throw new Error('Não foi possível iniciar o download.');
     }
 
-    // Se estiver no modo compartilhado do YouTube, oferece retorno imediato
+    // Se estiver no modo compartilhado do YouTube, oferece retorno imediato mantendo o usuário no YouTube
     if (state.isSharedMode) {
-      showToast('✓ Download em andamento! Voltando ao YouTube...', 'success');
+      showToast('✓ Download iniciado! Voltando ao YouTube...', 'success');
       setTimeout(() => {
         returnToYouTube();
-      }, 2000);
+      }, 1200);
     } else {
       switchTab('downloads');
       refreshDownloadsList();
@@ -594,7 +608,8 @@ async function triggerBatchDownload() {
     showToast(`${data.count} downloads foram adicionados à fila!`, 'success');
     
     if (state.isSharedMode) {
-      setTimeout(() => returnToYouTube(), 2000);
+      showToast('✓ Downloads iniciados! Voltando ao YouTube...', 'success');
+      setTimeout(() => returnToYouTube(), 1200);
     } else {
       switchTab('downloads');
       refreshDownloadsList();

@@ -157,3 +157,43 @@ body {
   transform: scale(0.96);
   transition: transform 0.1s ease;
 }
+
+/* Shared Overlay Mode - Abinha Flutuante idêntica ao SnapTube sobre o YouTube */
+body.shared-overlay-mode {
+  background-color: rgba(11, 15, 25, 0.78) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  overflow: hidden !important;
+  min-height: 100vh !important;
+}
+
+body.shared-overlay-mode #main-header,
+body.shared-overlay-mode #platforms-hub,
+body.shared-overlay-mode #main-content,
+body.shared-overlay-mode #mobile-nav,
+body.shared-overlay-mode footer {
+  display: none !important;
+}
+
+body.shared-overlay-mode #download-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  background-color: transparent !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: center !important;
+  z-index: 9999 !important;
+}
+
+body.shared-overlay-mode #playlist-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  background-color: rgba(11, 15, 25, 0.95) !important;
+  z-index: 9999 !important;
+}
+
+body.shared-overlay-mode #download-sheet {
+  background-color: #121826 !important;
+  border-top: 1px solid rgba(255, 190, 0, 0.35) !important;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(255, 190, 0, 0.15) !important;
+}

@@ -1,18 +1,25 @@
 FROM python:3.12-slim
 
-# Instala dependências do sistema: ffmpeg e nodejs
+# Instala dependências do sistema: ffmpeg, curl, unzip, certificados e nodejs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    nodejs \
-    npm \
     curl \
+    unzip \
+    ca-certificates \
+    nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Instala Deno (recomendado oficialmente pelo yt-dlp para solucionar desafios JS)
+RUN curl -fsSL https://deno.land/install.sh | sh
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="$DENO_INSTALL/bin:$PATH"
 
 WORKDIR /app
 
-# Copia e instala dependências do Python
+# Copia e instala dependências do Python com extras do yt-dlp
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -U "yt-dlp[default]"
 
 # Copia código do backend e frontend
 COPY backend/ ./backend/

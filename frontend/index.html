@@ -270,8 +270,8 @@
   <!-- ======================================================== -->
   <!-- MODAL VÍDEO SOLO (IDÊNTICO À IMAGEM 2 DO SNAPTUBE) -->
   <!-- ======================================================== -->
-  <div id="download-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4 transition-opacity">
-    <div id="download-sheet" class="bottom-sheet closed w-full max-w-md bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] flex flex-col">
+  <div id="download-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4 transition-opacity" onclick="handleBackdropClick(event)">
+    <div id="download-sheet" class="bottom-sheet closed w-full max-w-md bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] flex flex-col" onclick="event.stopPropagation()">
       
       <!-- Drag Handle -->
       <div class="w-12 h-1.5 rounded-full bg-slate-700 mx-auto mt-3 mb-1 sm:hidden"></div>
@@ -279,7 +279,7 @@
       <!-- Header: Baixar vídeo como -->
       <div class="p-4 border-b border-slate-800 flex items-center justify-between">
         <h3 class="font-bold text-base text-slate-100">Baixar vídeo como</h3>
-        <button onclick="closeDownloadModal()" class="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white">
+        <button onclick="closeDownloadModal()" class="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white" title="Fechar e voltar ao YouTube">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -383,7 +383,7 @@
       </div>
 
       <!-- Botão Amarelo de Confirmação (Sem anúncios) -->
-      <div class="p-4 bg-slate-900 border-t border-slate-800 space-y-2">
+      <div class="p-4 bg-slate-900 border-t border-slate-800 space-y-2 text-center">
         <button 
           id="solo-confirm-download-btn"
           onclick="triggerSoloDownload()"
@@ -400,6 +400,15 @@
           class="hidden w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-all touch-press text-center"
         >
           Voltar ao YouTube
+        </button>
+
+        <button 
+          id="open-full-app-btn"
+          type="button"
+          onclick="exitOverlayMode()"
+          class="hidden text-[11px] text-slate-400 hover:text-amber-400 pt-1"
+        >
+          Abrir aplicativo completo do SnapPlay
         </button>
       </div>
 
