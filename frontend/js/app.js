@@ -237,14 +237,21 @@ function openDownloadModal(mediaInfo) {
   const sheet = document.getElementById('download-sheet');
   if (!modal || !sheet) return;
 
-  document.getElementById('modal-thumb').src = mediaInfo.thumbnail || '/assets/icon-192.png';
-  document.getElementById('modal-title').textContent = mediaInfo.title;
-  document.getElementById('modal-author').textContent = `${mediaInfo.uploader} • ${mediaInfo.duration_formatted}`;
+  const thumbEl = document.getElementById('modal-thumb');
+  if (thumbEl) thumbEl.src = mediaInfo.thumbnail || '/assets/icon-192.png';
+
+  const titleEl = document.getElementById('modal-title');
+  if (titleEl) titleEl.textContent = mediaInfo.title || 'Vídeo';
+
+  const authorEl = document.getElementById('modal-author');
+  if (authorEl) authorEl.textContent = `${mediaInfo.uploader || 'YouTube'} • ${mediaInfo.duration_formatted || '00:00'}`;
 
   // Preenche tamanhos calculados com base nos formatos do vídeo
   const getFormatSize = (fmtId, defaultStr) => {
-    const all = [...mediaInfo.video_formats, ...mediaInfo.audio_formats];
-    const match = all.find(f => f.format_id === fmtId || f.quality_label.includes(fmtId));
+    const videoFmts = mediaInfo.video_formats || [];
+    const audioFmts = mediaInfo.audio_formats || [];
+    const all = [...videoFmts, ...audioFmts];
+    const match = all.find(f => f.format_id === fmtId || (f.quality_label && f.quality_label.includes(fmtId)));
     return match ? (match.filesize_formatted || defaultStr) : defaultStr;
   };
 
@@ -380,7 +387,8 @@ function openPlaylistModal(playlistInfo) {
   const modal = document.getElementById('playlist-modal');
   if (!modal) return;
 
-  document.getElementById('playlist-title-header').textContent = playlistInfo.title;
+  const titleHeader = document.getElementById('playlist-title-header');
+  if (titleHeader) titleHeader.textContent = playlistInfo.title || 'Playlist';
   
   const selectAllCheckbox = document.getElementById('playlist-select-all');
   if (selectAllCheckbox) {
@@ -1037,23 +1045,22 @@ function hideLoading() {
 function showToast(message, type = 'info') {
   const toast = document.getElementById('toast');
   const toastText = document.getElementById('toast-text');
-  const toastIcon = document.getElementById('toast-icon');
   if (!toast || !toastText) return;
 
   toastText.textContent = message;
   
   if (type === 'error') {
     toast.className = 'fixed top-5 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-rose-600 text-white font-medium shadow-2xl flex items-center gap-2.5 transition-all text-sm';
-    if (toastIcon) toastIcon.setAttribute('data-lucide', 'alert-circle');
   } else if (type === 'success') {
     toast.className = 'fixed top-5 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-emerald-600 text-white font-medium shadow-2xl flex items-center gap-2.5 transition-all text-sm';
-    if (toastIcon) toastIcon.setAttribute('data-lucide', 'check-circle-2');
   } else {
     toast.className = 'fixed top-5 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-amber-500 text-slate-950 font-semibold shadow-2xl flex items-center gap-2.5 transition-all text-sm';
-    if (toastIcon) toastIcon.setAttribute('data-lucide', 'info');
   }
 
-  initIcons();
+  try {
+    initIcons();
+  } catch (e) {}
+
   toast.classList.remove('hidden', 'opacity-0', '-translate-y-4');
   toast.classList.add('opacity-100', 'translate-y-0');
 

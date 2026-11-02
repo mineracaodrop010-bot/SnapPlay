@@ -1,21 +1,6 @@
-const CACHE_NAME = 'snapplay-cache-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/assets/logo.svg',
-  '/assets/icon-192.png',
-  '/assets/icon-512.png',
-  '/css/style.css',
-  '/js/app.js'
-];
+const CACHE_NAME = 'snapplay-cache-v3';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
-  );
   self.skipWaiting();
 });
 
@@ -34,23 +19,32 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Network First para sempre carregar as atualizações mais recentes do servidor
 self.addEventListener('fetch', (event) => {
-  // Ignora requisições de API e arquivos de mídia para não sobrecarregar cache
   if (event.request.url.includes('/api/') || event.request.url.includes('/media/')) {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).catch(() => {
-        // Fallback se estiver offline
-        if (event.request.headers.get('accept')?.includes('text/html')) {
-          return caches.match('/index.html');
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200 && event.request.method === 'GET') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, clone);
+          });
         }
-      });
-    })
+        return response;
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          if (event.request.headers.get('accept')?.includes('text/html')) {
+            return caches.match('/index.html');
+          }
+        });
+      })
   );
 });

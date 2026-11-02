@@ -37,11 +37,14 @@ async function installApp() {
   }
 }
 
-// Registrar Service Worker
+// Registrar Service Worker com verificação de atualização forçada
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then(reg => console.log('[PWA] Service Worker registrado:', reg.scope))
+    navigator.serviceWorker.register('/sw.js?v=2.1')
+      .then(reg => {
+        reg.update();
+        console.log('[PWA] Service Worker registrado e atualizado:', reg.scope);
+      })
       .catch(err => console.log('[PWA] Falha ao registrar Service Worker:', err));
   });
 }
