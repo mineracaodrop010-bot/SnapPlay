@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -21,8 +22,8 @@ import java.net.URLEncoder;
 public class MainActivity extends Activity {
 
     private WebView webView;
-    // Substitua pelo seu domínio hospedado ou IP local
-    private static final String APP_URL = "http://192.168.1.210:8000";
+    // Substitua pelo seu link do Render ou IP
+    private static final String APP_URL = "https://snapplay-app.onrender.com";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -30,6 +31,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         webView = new WebView(this);
+        // Fundo translúcido para manter o YouTube visível atrás da abinha de download
+        webView.setBackgroundColor(Color.TRANSPARENT);
         setContentView(webView);
 
         WebSettings settings = webView.getSettings();
@@ -47,7 +50,13 @@ public class MainActivity extends Activity {
             }
         });
 
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onCloseWindow(WebView window) {
+                // Fecha a abinha flutuante e volta ao YouTube instantaneamente
+                finish();
+            }
+        });
 
         webView.setDownloadListener(new DownloadListener() {
             @Override
@@ -57,7 +66,7 @@ public class MainActivity extends Activity {
                 String cookies = CookieManager.getInstance().getCookie(url);
                 request.addRequestHeader("cookie", cookies);
                 request.addRequestHeader("User-Agent", userAgent);
-                request.setDescription("Baixando arquivo pelo SnapPlay...");
+                request.setDescription("Baixando mídia com o SnapPlay...");
                 request.setTitle(URLUtil.guessFileName(url, contentDisposition, mimeType));
                 request.allowScanningByMediaScanner();
                 request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
@@ -66,7 +75,7 @@ public class MainActivity extends Activity {
                 DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                 if (dm != null) {
                     dm.enqueue(request);
-                    Toast.makeText(getApplicationContext(), "Download iniciado...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(getApplicationContext(), "✓ Download iniciado no aparelho!", Toast.LENGTH_SHORT).show();
                 }
             }
         });

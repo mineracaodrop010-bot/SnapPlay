@@ -1,6 +1,6 @@
 /**
  * SnapPlay - Frontend Application Logic
- * Suporte a Vídeos Individuais, Playlists em Lote e Compartilhamento Mobile
+ * Suporte a Vídeos Individuais, Playlists, Abinha Flutuante e Download Automático no Aparelho
  */
 
 const state = {
@@ -8,6 +8,7 @@ const state = {
   searchQuery: '',
   isSearching: false,
   isAnalyzing: false,
+  isSharedMode: false,
   searchResults: [],
   selectedMedia: null,
   activeDownloads: [],
@@ -15,11 +16,18 @@ const state = {
   pollingInterval: null,
   currentPlaying: null,
   networkInfo: null,
+  autoSavedTasks: new Set(),
+  // Estado para Vídeo Solo
+  selectedSoloFormat: {
+    format_id: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+    media_type: 'video',
+    quality_label: 'Alta qualidade (1080p)'
+  },
   // Estado para Playlists
   currentPlaylist: null,
   selectedPlaylistIndices: new Set(),
   selectedPlaylistFormat: {
-    format_id: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+    format_id: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
     media_type: 'video',
     quality_label: 'Alta qualidade (1080p)',
     rate_kbps: 4000
@@ -35,8 +43,10 @@ document.addEventListener('DOMContentLoaded', () => {
   startPolling();
   handleIncomingSharedUrl();
 
-  // Busca inicial de tendências
-  performSearch('top hits musicas 2026');
+  // Busca inicial de tendências se não for compartilhado
+  if (!state.isSharedMode) {
+    performSearch('top hits musicas 2026');
+  }
 });
 
 function initIcons() {
@@ -45,24 +55,50 @@ function initIcons() {
   }
 }
 
-// Trata links compartilhados pelo YouTube/TikTok no celular (?url=... ou ?text=...)
+// Trata links compartilhados pelo YouTube/TikTok no celular
 function handleIncomingSharedUrl() {
   const params = new URLSearchParams(window.location.search);
   const rawShared = params.get('url') || params.get('text');
   
   if (rawShared) {
-    // Extrai URL de mensagens com texto (ex: "Olha essa playlist: https://youtube.com/playlist?list=...")
+    state.isSharedMode = true;
+    
+    // Extrai URL do texto compartilhado
     const urlMatch = rawShared.match(/https?:\/\/[^\s]+/i);
     const targetUrl = urlMatch ? urlMatch[0] : rawShared.trim();
     
     if (targetUrl) {
       const searchInput = document.getElementById('search-input');
       if (searchInput) searchInput.value = targetUrl;
-      // Limpa a URL na barra de endereços sem recarregar a página
+      
+      // Limpa URL da barra de endereços
       window.history.replaceState({}, document.title, window.location.pathname);
-      showToast('Link recebido do compartilhamento!', 'success');
+      
+      // No modo compartilhado no celular, ativa visual limpo focado na abinha
+      prepareSharedOverlayMode();
+      
       handleSearchOrAnalyze(targetUrl);
     }
+  }
+}
+
+function prepareSharedOverlayMode() {
+  const header = document.getElementById('main-header');
+  const platforms = document.getElementById('platforms-hub');
+  const content = document.getElementById('main-content');
+  const mobileNav = document.getElementById('mobile-nav');
+
+  if (window.innerWidth < 768) {
+    if (platforms) platforms.classList.add('hidden');
+    if (content) content.classList.add('opacity-40');
+  }
+}
+
+function returnToYouTube() {
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.close();
   }
 }
 
@@ -154,7 +190,7 @@ async function handleSearchOrAnalyze(input) {
 // Analisar Link (Vídeo ou Playlist)
 async function analyzeUrl(url) {
   state.isAnalyzing = true;
-  showLoading("Carregando informações da playlist/vídeo...");
+  showLoading("Carregando informações...");
 
   try {
     const response = await fetch('/api/info', {
@@ -185,7 +221,142 @@ async function analyzeUrl(url) {
 }
 
 // ==========================================
-// SEÇÃO DE DOWNLOAD DE PLAYLIST (ESTILO SNAPTUBE)
+// SEÇÃO DE VÍDEO SOLO (IDÊNTICO À IMAGEM 2)
+// ==========================================
+
+function openDownloadModal(mediaInfo) {
+  state.selectedMedia = mediaInfo;
+  const modal = document.getElementById('download-modal');
+  const sheet = document.getElementById('download-sheet');
+  if (!modal || !sheet) return;
+
+  document.getElementById('modal-thumb').src = mediaInfo.thumbnail || '/assets/icon-192.png';
+  document.getElementById('modal-title').textContent = mediaInfo.title;
+  document.getElementById('modal-author').textContent = `${mediaInfo.uploader} • ${mediaInfo.duration_formatted}`;
+
+  // Preenche tamanhos calculados com base nos formatos do vídeo
+  const getFormatSize = (fmtId, defaultStr) => {
+    const all = [...mediaInfo.video_formats, ...mediaInfo.audio_formats];
+    const match = all.find(f => f.format_id === fmtId || f.quality_label.includes(fmtId));
+    return match ? (match.filesize_formatted || defaultStr) : defaultStr;
+  };
+
+  const elFastAudio = document.getElementById('solo-size-audio-fast');
+  const elHqAudio = document.getElementById('solo-size-audio-hq');
+  const el480Video = document.getElementById('solo-size-video-480');
+  const el1080Video = document.getElementById('solo-size-video-1080');
+  const el720Video = document.getElementById('solo-size-video-720');
+  const elM4aAudio = document.getElementById('solo-size-audio-m4a');
+
+  if (elFastAudio) elFastAudio.textContent = getFormatSize('mp3-128', '14,7 MB');
+  if (elHqAudio) elHqAudio.textContent = getFormatSize('mp3-320', '16,6 MB');
+  if (el480Video) el480Video.textContent = getFormatSize('480', '46,8 MB');
+  if (el1080Video) el1080Video.textContent = getFormatSize('1080', '170,2 MB');
+  if (el720Video) el720Video.textContent = getFormatSize('720', '98,4 MB');
+  if (elM4aAudio) elM4aAudio.textContent = getFormatSize('m4a', '15,0 MB');
+
+  // Seleção padrão: 1080p
+  selectSoloFormat('bestvideo[height<=1080]+bestaudio/best[height<=1080]/best', 'video', 'Alta qualidade (1080p)');
+
+  // Se veio do compartilhamento, exibe botão para voltar ao YouTube
+  const backBtn = document.getElementById('back-to-youtube-btn');
+  if (backBtn) {
+    if (state.isSharedMode) backBtn.classList.remove('hidden');
+    else backBtn.classList.add('hidden');
+  }
+
+  modal.classList.remove('hidden');
+  setTimeout(() => {
+    sheet.classList.remove('closed');
+    sheet.classList.add('open');
+  }, 10);
+  initIcons();
+}
+
+function selectSoloFormat(formatId, mediaType, qualityLabel) {
+  state.selectedSoloFormat = {
+    format_id: formatId,
+    media_type: mediaType,
+    quality_label: qualityLabel
+  };
+
+  document.querySelectorAll('input[name="solo_format_radio"]').forEach(radio => {
+    radio.checked = (radio.value === formatId);
+  });
+}
+
+function toggleSoloMoreFormats() {
+  const container = document.getElementById('solo-more-formats');
+  const btn = document.getElementById('btn-toggle-more-formats');
+  if (!container) return;
+
+  if (container.classList.contains('hidden')) {
+    container.classList.remove('hidden');
+    if (btn) btn.innerHTML = '<span>Menos formatos</span><i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>';
+  } else {
+    container.classList.add('hidden');
+    if (btn) btn.innerHTML = '<span>Mais formatos (Todos)</span><i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>';
+  }
+  initIcons();
+}
+
+function closeDownloadModal() {
+  const modal = document.getElementById('download-modal');
+  const sheet = document.getElementById('download-sheet');
+  if (!modal || !sheet) return;
+
+  sheet.classList.remove('open');
+  sheet.classList.add('closed');
+  setTimeout(() => {
+    modal.classList.add('hidden');
+  }, 250);
+}
+
+// Disparar Download de Vídeo Solo com Download Automático no Aparelho
+async function triggerSoloDownload() {
+  if (!state.selectedMedia) return;
+
+  const { webpage_url, title, thumbnail } = state.selectedMedia;
+  const { format_id, media_type, quality_label } = state.selectedSoloFormat;
+
+  closeDownloadModal();
+  showToast(`Baixando ${qualityLabel}... O arquivo será salvo automaticamente!`, 'success');
+
+  try {
+    const res = await fetch('/api/download/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: webpage_url,
+        format_id: format_id,
+        media_type: media_type,
+        quality_label: quality_label,
+        title: title,
+        thumbnail: thumbnail
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error('Não foi possível iniciar o download.');
+    }
+
+    // Se estiver no modo compartilhado do YouTube, oferece retorno imediato
+    if (state.isSharedMode) {
+      showToast('✓ Download em andamento! Voltando ao YouTube...', 'success');
+      setTimeout(() => {
+        returnToYouTube();
+      }, 2000);
+    } else {
+      switchTab('downloads');
+      refreshDownloadsList();
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ==========================================
+// SEÇÃO DE DOWNLOAD DE PLAYLIST (IMAGENS 2 E 3)
 // ==========================================
 
 function openPlaylistModal(playlistInfo) {
@@ -195,10 +366,8 @@ function openPlaylistModal(playlistInfo) {
   const modal = document.getElementById('playlist-modal');
   if (!modal) return;
 
-  // Header
   document.getElementById('playlist-title-header').textContent = playlistInfo.title;
   
-  // Checkbox Selecionar Tudo
   const selectAllCheckbox = document.getElementById('playlist-select-all');
   if (selectAllCheckbox) {
     selectAllCheckbox.checked = true;
@@ -228,7 +397,6 @@ function renderPlaylistItems() {
     const row = document.createElement('div');
     row.className = 'flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 transition-colors cursor-pointer group';
     row.onclick = (e) => {
-      // Se não clicou direto no checkbox, inverte seleção
       if (e.target.type !== 'checkbox') {
         togglePlaylistItem(idx);
       }
@@ -270,7 +438,6 @@ function togglePlaylistItem(idx) {
     state.selectedPlaylistIndices.add(idx);
   }
 
-  // Atualiza estado do "Selecionar Tudo"
   const selectAllCheckbox = document.getElementById('playlist-select-all');
   if (selectAllCheckbox && state.currentPlaylist) {
     selectAllCheckbox.checked = (state.selectedPlaylistIndices.size === state.currentPlaylist.playlist_items.length);
@@ -307,7 +474,6 @@ function updatePlaylistDownloadButton() {
   }
 }
 
-// Modal do Seletor de Resolução / Formato da Playlist (Screenshot 2)
 function openPlaylistFormatSelector() {
   if (state.selectedPlaylistIndices.size === 0) {
     showToast('Selecione pelo menos 1 vídeo da playlist.', 'info');
@@ -318,7 +484,6 @@ function openPlaylistFormatSelector() {
   const sheet = document.getElementById('playlist-format-sheet');
   if (!modal || !sheet) return;
 
-  // Calcula tamanho total estimado com base na quantidade e duração dos selecionados
   updatePlaylistCalculatedSizes();
 
   modal.classList.remove('hidden');
@@ -347,7 +512,7 @@ function calculateSelectedDuration() {
   state.selectedPlaylistIndices.forEach(idx => {
     const item = state.currentPlaylist.playlist_items[idx];
     if (item && item.duration) totalSec += item.duration;
-    else totalSec += 240; // fallback 4 min
+    else totalSec += 240;
   });
   return totalSec;
 }
@@ -362,26 +527,21 @@ function formatPlaylistBytes(bytes) {
 function updatePlaylistCalculatedSizes() {
   const totalSec = calculateSelectedDuration();
 
-  // Música: Rápido (128k), MP3 clássico (320k)
   const sizeAudioFast = (128 * 1024 / 8) * totalSec;
   const sizeAudioHq = (320 * 1024 / 8) * totalSec;
   const sizeVideo480 = (1200 * 1024 / 8) * totalSec;
   const sizeVideo1080 = (4000 * 1024 / 8) * totalSec;
-  const sizeVideo720 = (2200 * 1024 / 8) * totalSec;
 
   const elAudioFast = document.getElementById('size-audio-fast');
   const elAudioHq = document.getElementById('size-audio-hq');
   const elVideo480 = document.getElementById('size-video-480');
   const elVideo1080 = document.getElementById('size-video-1080');
-  const elVideo720 = document.getElementById('size-video-720');
 
   if (elAudioFast) elAudioFast.textContent = formatPlaylistBytes(sizeAudioFast);
   if (elAudioHq) elAudioHq.textContent = formatPlaylistBytes(sizeAudioHq);
   if (elVideo480) elVideo480.textContent = formatPlaylistBytes(sizeVideo480);
   if (elVideo1080) elVideo1080.textContent = formatPlaylistBytes(sizeVideo1080);
-  if (elVideo720) elVideo720.textContent = formatPlaylistBytes(sizeVideo720);
 
-  // Botão de ação
   const count = state.selectedPlaylistIndices.size;
   const confirmBtn = document.getElementById('playlist-confirm-download-btn');
   if (confirmBtn) {
@@ -397,13 +557,11 @@ function selectPlaylistFormat(formatId, mediaType, qualityLabel, rateKbps) {
     rate_kbps: rateKbps
   };
 
-  // Atualiza rádios
   document.querySelectorAll('input[name="playlist_format_radio"]').forEach(radio => {
     radio.checked = (radio.value === formatId);
   });
 }
 
-// Disparar Download em Lote da Playlist
 async function triggerBatchDownload() {
   if (!state.currentPlaylist || state.selectedPlaylistIndices.size === 0) return;
 
@@ -434,255 +592,36 @@ async function triggerBatchDownload() {
 
     const data = await res.json();
     showToast(`${data.count} downloads foram adicionados à fila!`, 'success');
-    switchTab('downloads');
-    refreshDownloadsList();
+    
+    if (state.isSharedMode) {
+      setTimeout(() => returnToYouTube(), 2000);
+    } else {
+      switchTab('downloads');
+      refreshDownloadsList();
+    }
   } catch (err) {
     showToast(err.message, 'error');
   }
 }
 
 // ==========================================
-// SEÇÃO DE VÍDEO INDIVIDUAL (MODAL SNAPTUBE)
-// ==========================================
-
-function openDownloadModal(mediaInfo) {
-  state.selectedMedia = mediaInfo;
-  const modal = document.getElementById('download-modal');
-  const sheet = document.getElementById('download-sheet');
-  if (!modal || !sheet) return;
-
-  document.getElementById('modal-thumb').src = mediaInfo.thumbnail || '';
-  document.getElementById('modal-title').textContent = mediaInfo.title;
-  document.getElementById('modal-author').textContent = `${mediaInfo.uploader} • ${mediaInfo.duration_formatted}`;
-
-  const audioList = document.getElementById('modal-audio-formats');
-  audioList.innerHTML = '';
-  mediaInfo.audio_formats.forEach(fmt => {
-    const btn = document.createElement('button');
-    btn.className = 'w-full flex items-center justify-between p-3 rounded-xl bg-slate-800/80 hover:bg-amber-400/10 hover:border-amber-400/40 border border-slate-700/60 transition-all text-left group touch-press';
-    btn.onclick = () => triggerDownload(fmt.format_id, 'audio', fmt.quality_label);
-
-    btn.innerHTML = `
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors">
-          <i data-lucide="music" class="w-5 h-5"></i>
-        </div>
-        <div>
-          <div class="font-bold text-sm text-slate-100 group-hover:text-amber-400 transition-colors">
-            ${fmt.quality_label}
-          </div>
-          <div class="text-xs text-slate-400">${fmt.note || 'Áudio'}</div>
-        </div>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="text-xs font-semibold px-2 py-1 rounded bg-slate-700/50 text-slate-300">
-          ${fmt.filesize_formatted || 'Auto'}
-        </span>
-        <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors">
-          <i data-lucide="arrow-down" class="w-4 h-4"></i>
-        </div>
-      </div>
-    `;
-    audioList.appendChild(btn);
-  });
-
-  const videoList = document.getElementById('modal-video-formats');
-  videoList.innerHTML = '';
-  mediaInfo.video_formats.forEach(fmt => {
-    const btn = document.createElement('button');
-    btn.className = 'w-full flex items-center justify-between p-3 rounded-xl bg-slate-800/80 hover:bg-amber-400/10 hover:border-amber-400/40 border border-slate-700/60 transition-all text-left group touch-press';
-    btn.onclick = () => triggerDownload(fmt.format_id, 'video', fmt.quality_label);
-
-    btn.innerHTML = `
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors">
-          <i data-lucide="video" class="w-5 h-5"></i>
-        </div>
-        <div>
-          <div class="font-bold text-sm text-slate-100 group-hover:text-amber-400 transition-colors">
-            ${fmt.quality_label}
-          </div>
-          <div class="text-xs text-slate-400">${fmt.note || 'Vídeo MP4'}</div>
-        </div>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="text-xs font-semibold px-2 py-1 rounded bg-slate-700/50 text-slate-300">
-          ${fmt.filesize_formatted || 'Auto'}
-        </span>
-        <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors">
-          <i data-lucide="arrow-down" class="w-4 h-4"></i>
-        </div>
-      </div>
-    `;
-    videoList.appendChild(btn);
-  });
-
-  initIcons();
-
-  modal.classList.remove('hidden');
-  setTimeout(() => {
-    sheet.classList.remove('closed');
-    sheet.classList.add('open');
-  }, 10);
-}
-
-function closeDownloadModal() {
-  const modal = document.getElementById('download-modal');
-  const sheet = document.getElementById('download-sheet');
-  if (!modal || !sheet) return;
-
-  sheet.classList.remove('open');
-  sheet.classList.add('closed');
-  setTimeout(() => {
-    modal.classList.add('hidden');
-  }, 250);
-}
-
-async function triggerDownload(formatId, mediaType, qualityLabel) {
-  if (!state.selectedMedia) return;
-
-  const { webpage_url, title, thumbnail } = state.selectedMedia;
-  closeDownloadModal();
-  showToast(`Iniciando download (${qualityLabel})...`, 'info');
-
-  try {
-    const res = await fetch('/api/download/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: webpage_url,
-        format_id: formatId,
-        media_type: mediaType,
-        quality_label: qualityLabel,
-        title: title,
-        thumbnail: thumbnail
-      })
-    });
-
-    if (!res.ok) {
-      throw new Error('Não foi possível iniciar o download.');
-    }
-
-    switchTab('downloads');
-    refreshDownloadsList();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-// ==========================================
-// BUSCA E RENDERIZAÇÃO DE VÍDEOS
-// ==========================================
-
-async function performSearch(query) {
-  if (!query) return;
-  state.isSearching = true;
-  state.searchQuery = query;
-  
-  switchTab('discover');
-
-  const resultsGrid = document.getElementById('search-results-grid');
-  const skeletonEl = document.getElementById('search-skeleton');
-  const emptyState = document.getElementById('search-empty');
-
-  if (skeletonEl) skeletonEl.classList.remove('hidden');
-  if (resultsGrid) resultsGrid.innerHTML = '';
-  if (emptyState) emptyState.classList.add('hidden');
-
-  try {
-    const response = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, limit: 16 })
-    });
-
-    if (!response.ok) {
-      throw new Error('Falha na busca.');
-    }
-
-    const items = await response.json();
-    state.searchResults = items;
-    renderSearchResults(items);
-  } catch (error) {
-    showToast('Erro ao realizar busca: ' + error.message, 'error');
-    if (emptyState) emptyState.classList.remove('hidden');
-  } finally {
-    if (skeletonEl) skeletonEl.classList.add('hidden');
-    state.isSearching = false;
-  }
-}
-
-function renderSearchResults(items) {
-  const container = document.getElementById('search-results-grid');
-  const emptyState = document.getElementById('search-empty');
-  if (!container) return;
-
-  container.innerHTML = '';
-
-  if (!items || items.length === 0) {
-    if (emptyState) emptyState.classList.remove('hidden');
-    return;
-  }
-
-  if (emptyState) emptyState.classList.add('hidden');
-
-  items.forEach(item => {
-    const card = document.createElement('div');
-    card.className = 'video-card bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col group';
-    
-    const thumbUrl = item.thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60';
-    
-    card.innerHTML = `
-      <div class="relative w-full aspect-video bg-slate-950 overflow-hidden cursor-pointer" onclick="analyzeUrl('${item.url}')">
-        <img src="${thumbUrl}" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60'"/>
-        <div class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-sm text-[11px] font-bold text-white tracking-wider">
-          ${item.duration_formatted || '00:00'}
-        </div>
-        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <div class="w-12 h-12 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-lg shadow-amber-400/30 transform scale-90 group-hover:scale-100 transition-transform">
-            <i data-lucide="download" class="w-6 h-6"></i>
-          </div>
-        </div>
-      </div>
-      
-      <div class="p-3.5 flex flex-col flex-1 justify-between">
-        <div>
-          <h3 class="font-bold text-sm text-slate-100 line-clamp-2 leading-snug group-hover:text-amber-400 transition-colors cursor-pointer" onclick="analyzeUrl('${item.url}')" title="${escapeHtml(item.title)}">
-            ${escapeHtml(item.title)}
-          </h3>
-          <p class="text-xs text-slate-400 mt-1 flex items-center gap-1.5 truncate">
-            <span>${escapeHtml(item.uploader)}</span>
-            <span class="text-slate-600">•</span>
-            <span>${item.views || ''}</span>
-          </p>
-        </div>
-
-        <div class="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
-          <button onclick="analyzeUrl('${item.url}')" class="flex-1 py-1.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-amber-400/20">
-            <i data-lucide="download" class="w-3.5 h-3.5"></i>
-            <span>Baixar</span>
-          </button>
-          
-          <button onclick="openExternalLink('${item.url}')" class="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors" title="Abrir Link Original">
-            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-          </button>
-        </div>
-      </div>
-    `;
-
-    container.appendChild(card);
-  });
-
-  initIcons();
-}
-
-// ==========================================
-// POLLING E GERENCIAMENTO DE DOWNLOADS
+// POLLING E DOWNLOAD AUTOMÁTICO NO APARELHO
 // ==========================================
 
 function startPolling() {
   if (state.pollingInterval) clearInterval(state.pollingInterval);
   state.pollingInterval = setInterval(refreshDownloadsList, 1500);
+}
+
+// Salva o arquivo diretamente no aparelho do usuário assim que concluído
+function triggerBrowserDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'download';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast(`✓ Arquivo "${filename}" salvo no seu aparelho!`, 'success');
 }
 
 async function refreshDownloadsList() {
@@ -696,6 +635,14 @@ async function refreshDownloadsList() {
 
     state.activeDownloads = active;
     state.completedDownloads = completed;
+
+    // Dispara salvamento automático no aparelho quando o servidor finalizar
+    completed.forEach(task => {
+      if (task.status === 'completed' && !state.autoSavedTasks.has(task.task_id)) {
+        state.autoSavedTasks.add(task.task_id);
+        triggerBrowserDownload(task.download_url, task.filename);
+      }
+    });
 
     const badge = document.getElementById('downloads-badge');
     if (badge) {
@@ -816,7 +763,7 @@ function renderCompletedDownloads(tasks) {
           <i data-lucide="play" class="w-4 h-4"></i>
         </button>
 
-        <a href="${downloadFileUrl}" download class="p-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold transition-all shadow-md shadow-amber-400/20" title="Salvar no Notebook/Celular">
+        <a href="${downloadFileUrl}" download class="p-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold transition-all shadow-md shadow-amber-400/20" title="Baixar novamente">
           <i data-lucide="download" class="w-4 h-4"></i>
         </a>
       </div>
@@ -828,9 +775,112 @@ function renderCompletedDownloads(tasks) {
 }
 
 // ==========================================
-// MEDIA PLAYER EMBUTIDO
+// BUSCA E RENDERIZAÇÃO DE VÍDEOS
 // ==========================================
 
+async function performSearch(query) {
+  if (!query) return;
+  state.isSearching = true;
+  state.searchQuery = query;
+  
+  switchTab('discover');
+
+  const resultsGrid = document.getElementById('search-results-grid');
+  const skeletonEl = document.getElementById('search-skeleton');
+  const emptyState = document.getElementById('search-empty');
+
+  if (skeletonEl) skeletonEl.classList.remove('hidden');
+  if (resultsGrid) resultsGrid.innerHTML = '';
+  if (emptyState) emptyState.classList.add('hidden');
+
+  try {
+    const response = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, limit: 16 })
+    });
+
+    if (!response.ok) {
+      throw new Error('Falha na busca.');
+    }
+
+    const items = await response.json();
+    state.searchResults = items;
+    renderSearchResults(items);
+  } catch (error) {
+    showToast('Erro ao realizar busca: ' + error.message, 'error');
+    if (emptyState) emptyState.classList.remove('hidden');
+  } finally {
+    if (skeletonEl) skeletonEl.classList.add('hidden');
+    state.isSearching = false;
+  }
+}
+
+function renderSearchResults(items) {
+  const container = document.getElementById('search-results-grid');
+  const emptyState = document.getElementById('search-empty');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (!items || items.length === 0) {
+    if (emptyState) emptyState.classList.remove('hidden');
+    return;
+  }
+
+  if (emptyState) emptyState.classList.add('hidden');
+
+  items.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'video-card bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col group';
+    
+    const thumbUrl = item.thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60';
+    
+    card.innerHTML = `
+      <div class="relative w-full aspect-video bg-slate-950 overflow-hidden cursor-pointer" onclick="analyzeUrl('${item.url}')">
+        <img src="${thumbUrl}" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60'"/>
+        <div class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-sm text-[11px] font-bold text-white tracking-wider">
+          ${item.duration_formatted || '00:00'}
+        </div>
+        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <div class="w-12 h-12 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-lg shadow-amber-400/30 transform scale-90 group-hover:scale-100 transition-transform">
+            <i data-lucide="download" class="w-6 h-6"></i>
+          </div>
+        </div>
+      </div>
+      
+      <div class="p-3.5 flex flex-col flex-1 justify-between">
+        <div>
+          <h3 class="font-bold text-sm text-slate-100 line-clamp-2 leading-snug group-hover:text-amber-400 transition-colors cursor-pointer" onclick="analyzeUrl('${item.url}')" title="${escapeHtml(item.title)}">
+            ${escapeHtml(item.title)}
+          </h3>
+          <p class="text-xs text-slate-400 mt-1 flex items-center gap-1.5 truncate">
+            <span>${escapeHtml(item.uploader)}</span>
+            <span class="text-slate-600">•</span>
+            <span>${item.views || ''}</span>
+          </p>
+        </div>
+
+        <div class="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+          <button onclick="analyzeUrl('${item.url}')" class="flex-1 py-1.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-amber-400/20">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Baixar</span>
+          </button>
+          
+          <button onclick="openExternalLink('${item.url}')" class="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors" title="Abrir Link Original">
+            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+
+  initIcons();
+}
+
+// Media Player
 function playMediaFile(url, title, quality, thumb, isAudio) {
   const playerBar = document.getElementById('global-player-bar');
   const audioElement = document.getElementById('global-audio-element');
@@ -902,7 +952,6 @@ function closePlayerModal() {
   if (videoModal) videoModal.classList.add('hidden');
 }
 
-// Colar do Clipboard
 async function pasteFromClipboard() {
   try {
     const text = await navigator.clipboard.readText();
@@ -918,7 +967,6 @@ async function pasteFromClipboard() {
   }
 }
 
-// Informações de Rede e QR Code
 async function loadNetworkInfo() {
   try {
     const res = await fetch('/api/network-info');
@@ -951,7 +999,7 @@ function closeQrModal() {
 function copyMobileUrl() {
   if (state.networkInfo?.mobile_url) {
     navigator.clipboard.writeText(state.networkInfo.mobile_url);
-    showToast('Endereço copiado! Abra no celular ou compartilhe.', 'success');
+    showToast('Endereço copiado!', 'success');
   }
 }
 
@@ -959,7 +1007,6 @@ function openExternalLink(url) {
   window.open(url, '_blank');
 }
 
-// Utilitários de UI
 function showLoading(text) {
   const loader = document.getElementById('global-loader');
   const loaderText = document.getElementById('global-loader-text');

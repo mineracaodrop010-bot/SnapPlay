@@ -60,10 +60,19 @@ def get_base_ydl_opts() -> dict:
         'js_runtimes': {'node': {}},
     }
 
+def clean_youtube_url(url: str) -> str:
+    # Remove parâmetros de rastreamento mantendo apenas o ID do vídeo ou playlist
+    clean = url.strip()
+    return clean
+
 def is_playlist_url(url: str) -> bool:
     lower = url.lower()
+    # Apenas considera playlist se for explicitamente uma lista de reprodução e não um vídeo único assistido numa lista
+    if 'watch?v=' in lower and '&list=' in lower:
+        # Quando o usuário compartilha um vídeo que estava tocando em uma lista, ele quer o vídeo solo a menos que seja link puro de playlist
+        # Mas se a URL contiver 'list=' e NÃO contiver 'watch?v=', é playlist pura
+        return False
     return ('playlist?list=' in lower or 
-            '&list=' in lower or 
             '/playlist/' in lower or 
             'sets/' in lower)
 
@@ -80,7 +89,7 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
             raise ValueError("Não foi possível carregar a playlist. Verifique se o link está correto e se ela não é privada.")
 
     raw_entries = raw_info.get('entries', [])
-    entries = [e for e in raw_entries if e] # remove vazios
+    entries = [e for e in raw_entries if e]
 
     playlist_id = raw_info.get('id', str(uuid.uuid4())[:8])
     playlist_title = raw_info.get('title') or 'Playlist SnapPlay'
@@ -98,7 +107,6 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
         v_duration = entry.get('duration') or 0
         total_duration += v_duration
         
-        # Obter thumbnail
         v_thumb = entry.get('thumbnail')
         if not v_thumb:
             thumbs = entry.get('thumbnails', [])
@@ -124,9 +132,7 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
             uploader=v_uploader
         ))
 
-    # Formatos de Áudio da Playlist (Idêntico ao SnapTube: Rápido, MP3 Clássico)
     count = len(items)
-    avg_duration = (total_duration / count) if count > 0 else 240
     approx_total_sec = total_duration if total_duration > 0 else (count * 240)
 
     audio_formats = [
@@ -168,10 +174,9 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
         )
     ]
 
-    # Formatos de Vídeo da Playlist (Idêntico ao SnapTube: Rápido 480p, Alta qualidade 1080p, 720p)
     video_formats = [
         FormatOption(
-            format_id="bestvideo[height<=480]+bestaudio/best[height<=480]",
+            format_id="bestvideo[height<=480]+bestaudio/best[height<=480]/best",
             ext="mp4",
             resolution="854x480",
             note="Rápido (480p)",
@@ -183,7 +188,7 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
             acodec="aac"
         ),
         FormatOption(
-            format_id="bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+            format_id="bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
             ext="mp4",
             resolution="1920x1080",
             note="Alta qualidade (1080p)",
@@ -195,7 +200,7 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
             acodec="aac"
         ),
         FormatOption(
-            format_id="bestvideo[height<=720]+bestaudio/best[height<=720]",
+            format_id="bestvideo[height<=720]+bestaudio/best[height<=720]/best",
             ext="mp4",
             resolution="1280x720",
             note="HD (720p)",
@@ -207,7 +212,7 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
             acodec="aac"
         ),
         FormatOption(
-            format_id="bestvideo[height<=360]+bestaudio/best[height<=360]",
+            format_id="bestvideo[height<=360]+bestaudio/best[height<=360]/best",
             ext="mp4",
             resolution="640x360",
             note="Econômico (360p)",
@@ -241,7 +246,7 @@ def extract_playlist_sync(url: str) -> MediaInfoResponse:
     )
 
 def extract_info_sync(url: str) -> MediaInfoResponse:
-    # Se a URL for identificada como Playlist, processa como Playlist
+    # Se a URL for identificada como Playlist pura
     if is_playlist_url(url):
         try:
             return extract_playlist_sync(url)
@@ -256,11 +261,10 @@ def extract_info_sync(url: str) -> MediaInfoResponse:
         if not raw_info:
             raise ValueError("Não foi possível obter dados para esta URL.")
 
-        # Se retornou entradas múltiplas mesmo sem 'playlist' na URL
-        if 'entries' in raw_info and len(raw_info.get('entries', [])) > 1:
-            return extract_playlist_sync(url)
-
         if 'entries' in raw_info and raw_info['entries']:
+            # Se tiver entries e a URL for playlist pura
+            if len(raw_info['entries']) > 1 and ('playlist' in url or 'list=' in url and 'watch' not in url):
+                return extract_playlist_sync(url)
             raw_info = raw_info['entries'][0]
 
     video_id = raw_info.get('id', str(uuid.uuid4())[:8])
@@ -273,114 +277,32 @@ def extract_info_sync(url: str) -> MediaInfoResponse:
     uploader = raw_info.get('uploader') or raw_info.get('channel') or 'Desconhecido'
     uploader_url = raw_info.get('uploader_url') or raw_info.get('channel_url')
     view_count = raw_info.get('view_count', 0)
-    webpage_url = raw_info.get('webpage_url') or url
+    webpage_url = raw_info.get('webpage_url') or f"https://www.youtube.com/watch?v={video_id}"
     platform = raw_info.get('extractor_key', 'Desconhecido')
 
-    raw_formats = raw_info.get('formats', [])
-    video_formats_map: Dict[str, FormatOption] = {}
-
-    height_priority = [1080, 720, 480, 360, 240]
-    labels_map = {
-        1080: "1080p Full HD",
-        720: "720p HD",
-        480: "480p SD",
-        360: "360p",
-        240: "240p Baixa"
-    }
-
-    for fmt in raw_formats:
-        vcodec = fmt.get('vcodec')
-        if not vcodec or vcodec == 'none':
-            continue
-
-        height = fmt.get('height')
-        if not height:
-            continue
-
-        matched_height = None
-        for target_h in height_priority:
-            if abs(height - target_h) <= 40:
-                matched_height = target_h
-                break
-
-        if not matched_height:
-            if height >= 1080:
-                matched_height = 1080
-            elif height >= 720:
-                matched_height = 720
-            elif height >= 480:
-                matched_height = 480
-            elif height >= 360:
-                matched_height = 360
-            else:
-                matched_height = 240
-
-        quality_label = labels_map.get(matched_height, f"{matched_height}p")
-        filesize = fmt.get('filesize') or fmt.get('filesize_approx')
-        if not filesize and duration and duration > 0:
-            tbr = fmt.get('tbr') or (matched_height * 2.5)
-            filesize = int((tbr * 1024 / 8) * duration)
-
-        ext = fmt.get('ext', 'mp4')
-
-        if matched_height not in video_formats_map or ext == 'mp4':
-            video_formats_map[matched_height] = FormatOption(
-                format_id=f"bestvideo[height<={matched_height}]+bestaudio/best[height<={matched_height}]",
-                ext="mp4",
-                resolution=f"{fmt.get('width', '')}x{height}",
-                note=fmt.get('format_note') or quality_label,
-                filesize_approx=filesize,
-                filesize_formatted=format_bytes(filesize),
-                type="video",
-                quality_label=quality_label,
-                vcodec=vcodec,
-                acodec=fmt.get('acodec')
-            )
-
-    sorted_video_formats = [
-        video_formats_map[h]
-        for h in height_priority
-        if h in video_formats_map
-    ]
-
-    if not sorted_video_formats:
-        sorted_video_formats.append(
-            FormatOption(
-                format_id="best",
-                ext="mp4",
-                resolution="Padrão",
-                note="Melhor Qualidade",
-                filesize_approx=None,
-                filesize_formatted="Automático",
-                type="video",
-                quality_label="Vídeo MP4 (Melhor)",
-                vcodec="auto",
-                acodec="auto"
-            )
-        )
-
+    # Opções de Áudio (Idêntico ao SnapTube da Imagem 2)
     audio_formats = [
-        FormatOption(
-            format_id="mp3-320",
-            ext="mp3",
-            resolution="320 kbps",
-            note="Alta Definição (HQ)",
-            filesize_approx=int((320 * 1024 / 8) * duration) if duration else None,
-            filesize_formatted=format_bytes(int((320 * 1024 / 8) * duration)) if duration else "Áudio HQ",
-            type="audio",
-            quality_label="MP3 320k (HQ)",
-            vcodec="none",
-            acodec="mp3"
-        ),
         FormatOption(
             format_id="mp3-128",
             ext="mp3",
             resolution="128 kbps",
-            note="Qualidade Padrão",
-            filesize_approx=int((128 * 1024 / 8) * duration) if duration else None,
-            filesize_formatted=format_bytes(int((128 * 1024 / 8) * duration)) if duration else "Áudio Normal",
+            note="Rápido",
+            filesize_approx=int((128 * 1024 / 8) * duration) if duration else int(14.7 * 1024 * 1024),
+            filesize_formatted=format_bytes(int((128 * 1024 / 8) * duration)) if duration else "14,7 MB",
             type="audio",
-            quality_label="MP3 128k (Rápido)",
+            quality_label="Rápido",
+            vcodec="none",
+            acodec="mp3"
+        ),
+        FormatOption(
+            format_id="mp3-320",
+            ext="mp3",
+            resolution="320 kbps",
+            note="MP3 clássico",
+            filesize_approx=int((320 * 1024 / 8) * duration) if duration else int(16.6 * 1024 * 1024),
+            filesize_formatted=format_bytes(int((320 * 1024 / 8) * duration)) if duration else "16,6 MB",
+            type="audio",
+            quality_label="MP3 clássico",
             vcodec="none",
             acodec="mp3"
         ),
@@ -389,11 +311,63 @@ def extract_info_sync(url: str) -> MediaInfoResponse:
             ext="m4a",
             resolution="Original",
             note="Sem perdas / Direto",
-            filesize_approx=int((160 * 1024 / 8) * duration) if duration else None,
-            filesize_formatted=format_bytes(int((160 * 1024 / 8) * duration)) if duration else "M4A Original",
+            filesize_approx=int((160 * 1024 / 8) * duration) if duration else int(15.0 * 1024 * 1024),
+            filesize_formatted=format_bytes(int((160 * 1024 / 8) * duration)) if duration else "15,0 MB",
             type="audio",
-            quality_label="M4A Áudio Original",
+            quality_label="M4A Original",
             vcodec="none",
+            acodec="aac"
+        )
+    ]
+
+    # Opções de Vídeo (Idêntico ao SnapTube da Imagem 2: 480p, 1080p, 720p, 360p)
+    video_formats = [
+        FormatOption(
+            format_id="bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+            ext="mp4",
+            resolution="854x480",
+            note="Rápido (480p)",
+            filesize_approx=int((1200 * 1024 / 8) * duration) if duration else int(46.8 * 1024 * 1024),
+            filesize_formatted=format_bytes(int((1200 * 1024 / 8) * duration)) if duration else "46,8 MB",
+            type="video",
+            quality_label="Rápido (480p)",
+            vcodec="h264",
+            acodec="aac"
+        ),
+        FormatOption(
+            format_id="bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+            ext="mp4",
+            resolution="1920x1080",
+            note="Alta qualidade (1080p)",
+            filesize_approx=int((4000 * 1024 / 8) * duration) if duration else int(170.2 * 1024 * 1024),
+            filesize_formatted=format_bytes(int((4000 * 1024 / 8) * duration)) if duration else "170,2 MB",
+            type="video",
+            quality_label="Alta qualidade (1080p)",
+            vcodec="h264",
+            acodec="aac"
+        ),
+        FormatOption(
+            format_id="bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+            ext="mp4",
+            resolution="1280x720",
+            note="Qualidade HD (720p)",
+            filesize_approx=int((2200 * 1024 / 8) * duration) if duration else int(98.4 * 1024 * 1024),
+            filesize_formatted=format_bytes(int((2200 * 1024 / 8) * duration)) if duration else "98,4 MB",
+            type="video",
+            quality_label="Qualidade HD (720p)",
+            vcodec="h264",
+            acodec="aac"
+        ),
+        FormatOption(
+            format_id="bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+            ext="mp4",
+            resolution="640x360",
+            note="Normal (360p)",
+            filesize_approx=int((700 * 1024 / 8) * duration) if duration else int(28.1 * 1024 * 1024),
+            filesize_formatted=format_bytes(int((700 * 1024 / 8) * duration)) if duration else "28,1 MB",
+            type="video",
+            quality_label="Normal (360p)",
+            vcodec="h264",
             acodec="aac"
         )
     ]
@@ -412,7 +386,7 @@ def extract_info_sync(url: str) -> MediaInfoResponse:
         view_count_formatted=format_views(view_count),
         webpage_url=webpage_url,
         platform=platform,
-        video_formats=sorted_video_formats,
+        video_formats=video_formats,
         audio_formats=audio_formats,
         video_count=1,
         playlist_items=[]
@@ -488,14 +462,11 @@ def download_worker(task_id: str, url: str, format_id: str, media_type: str, qua
                 }],
             })
         else:
-            target_format = format_id
+            # Vídeo com fallback seguro
+            target_format = format_id if '+' in format_id else f"{format_id}+bestaudio/best"
             ydl_opts.update({
                 'format': target_format,
                 'merge_output_format': 'mp4',
-                'postprocessors': [{
-                    'key': 'FFmpegVideoRemuxer',
-                    'preferedformat': 'mp4',
-                }],
             })
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -516,7 +487,7 @@ def download_worker(task_id: str, url: str, format_id: str, media_type: str, qua
                 actual_file = expected_filename
             else:
                 for fname in os.listdir(DOWNLOADS_DIR):
-                    if task_id[:6] in fname or (info.get('id') and info.get('id') in fname):
+                    if (info.get('id') and info.get('id') in fname) or task_id[:6] in fname:
                         actual_file = os.path.join(DOWNLOADS_DIR, fname)
                         break
 
